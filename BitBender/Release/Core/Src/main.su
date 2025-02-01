@@ -1,3 +1,6 @@
-../Core/Src/main.c:128:6:SystemClock_Config	88	static,ignoring_inline_asm
-../Core/Src/main.c:72:5:main	136	static,ignoring_inline_asm
-../Core/Src/main.c:320:6:Error_Handler	0	static,ignoring_inline_asm
+../Core/Src/main.c:131:6:SystemClock_Config	88	static,ignoring_inline_asm
+../Core/Src/main.c:317:6:HAL_UART_RxCpltCallback	16	static
+../Core/Src/main.c:323:6:Welcome_Message	656	static
+../Core/Src/main.c:337:6:print_menu	0	static
+../Core/Src/main.c:73:5:main	48	static,ignoring_inline_asm
+../Core/Src/main.c:358:6:Error_Handler	0	static,ignoring_inline_asm

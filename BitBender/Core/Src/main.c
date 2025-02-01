@@ -47,7 +47,7 @@ SPI_HandleTypeDef hspi2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
+uint8_t rx_buff[10];
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -57,6 +57,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
+
 
 /* USER CODE END PFP */
 
@@ -101,9 +102,13 @@ int main(void)
 
   Welcome_Message();
   print_menu();
-  uint8_t rx_buff[10];
+
 
   /* USER CODE END 2 */
+
+  HAL_UART_Receive_IT(&huart2, rx_buff, 10);
+
+  HAL_UART_Transmit_IT(&huart2, rx_buff, 10);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -113,9 +118,9 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     HAL_UART_Receive_IT(&huart2, rx_buff, 10);
-    char msg [100];
-    sprintf(msg, "Received: %s", rx_buff);
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+    HAL_UART_Transmit_IT(&huart2, rx_buff, 10);
+
+
 
   }
   /* USER CODE END 3 */
@@ -272,34 +277,7 @@ static void MX_USART2_UART_Init(void)
 
 }
 
-void Welcome_Message(void){
-  char msg[] ="                                                                  \r\n\
- ______  _         ______                  _                                     \r\n\
-(____  \\(_)_      (____  \\                | |                                  \r\n\
- ____)  )_| |_     ____)  ) ____ ____   _ | | ____  ____                         \r\n\
-|  __  (| |  _)   |  __  ( / _  )  _ \\ / || |/ _  )/ ___)                       \r\n\
-| |__)  ) | |__   | |__)  | (/ /| | | ( (_| ( (/ /| |                            \r\n\
-|______/|_|\\___)  |______/ \\____)_| |_|\\____|\\____)_|                        \r\n\
-==========================================================                       \r\n\
-";
 
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);  
-}
-
-void print_menu(void)
-{
-    char *menu_text = "Available Commands:\r\n"
-                      "1. SCAN - Scan for devices\r\n"
-                      "2. READ - Read from device\r\n"
-                      "3. WRITE - Write to device\r\n"
-                      "4. SET_SPEED - Set communication speed\r\n"
-                      "5. CONFIGURE - Configure device\r\n"
-                      "6. INFO - Display device information\r\n"
-                      "7. RESET - Reset I2C bus\r\n"
-                      "8. HELP - Display this menu\r\n"
-                      "9. EXIT - Exit the menu\r\n";
-    HAL_UART_Transmit(&huart2, (uint8_t *)menu_text, strlen(menu_text), HAL_MAX_DELAY);
-}
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -338,6 +316,40 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
+{
+  HAL_UART_Receive_IT(&huart2, rx_buff, 10);
+  HAL_UART_Transmit(&huart2, rx_buff, 1, 0xFFFF);
+}
+
+void Welcome_Message(){
+  char msg[] ="                                                                  \r\n\
+ ______  _         ______                  _                                     \r\n\
+(____  \\(_)_      (____  \\                | |                                  \r\n\
+ ____)  )_| |_     ____)  ) ____ ____   _ | | ____  ____                         \r\n\
+|  __  (| |  _)   |  __  ( / _  )  _ \\ / || |/ _  )/ ___)                       \r\n\
+| |__)  ) | |__   | |__)  | (/ /| | | ( (_| ( (/ /| |                            \r\n\
+|______/|_|\\___)  |______/ \\____)_| |_|\\____|\\____)_|                        \r\n\
+==========================================================                       \r\n\
+";
+
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);  
+}
+
+void print_menu()
+{
+    char *menu_text = "Available Commands:\r\n"
+                      "1. SCAN - Scan for devices\r\n"
+                      "2. READ - Read from device\r\n"
+                      "3. WRITE - Write to device\r\n"
+                      "4. SET_SPEED - Set communication speed\r\n"
+                      "5. CONFIGURE - Configure device\r\n"
+                      "6. INFO - Display device information\r\n"
+                      "7. RESET - Reset I2C bus\r\n"
+                      "8. HELP - Display this menu\r\n"
+                      "9. EXIT - Exit the menu\r\n";
+    HAL_UART_Transmit(&huart2, (uint8_t *)menu_text, strlen(menu_text), HAL_MAX_DELAY);
+}
 
 /* USER CODE END 4 */
 

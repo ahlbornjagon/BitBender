@@ -1,0 +1,10 @@
+23:35:00 **** Incremental Build of configuration Debug for project BitBender ****
+make -j16 all 
+arm-none-eabi-size  BitBender.elf 
+   text	   data	    bss	    dec	    hex	filename
+  11248	     12	   1828	  13088	   3320	BitBender.elf
+Finished building: default.size.stdout
+ 
+
+23:35:00 Build Finished. 0 errors, 0 warnings. (took 356ms)
+
