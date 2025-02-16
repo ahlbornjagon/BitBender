@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <string.h>
+#include <ctype.h>
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -47,7 +49,13 @@ SPI_HandleTypeDef hspi2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-uint8_t rx_buff[10];
+#define RX_BUFFER_SIZE 128
+
+uint8_t rx_byte;
+uint8_t rx_buffer[RX_BUFFER_SIZE];
+uint16_t rx_index = 0;
+uint8_t command_ready = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -106,9 +114,7 @@ int main(void)
 
   /* USER CODE END 2 */
 
-  HAL_UART_Receive_IT(&huart2, rx_buff, 10);
-
-  HAL_UART_Transmit_IT(&huart2, rx_buff, 10);
+  HAL_UART_Receive_IT(&huart2, rx_buffer, 1);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -117,8 +123,16 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_UART_Receive_IT(&huart2, rx_buff, 10);
-    HAL_UART_Transmit_IT(&huart2, rx_buff, 10);
+    if (command_ready)
+    {
+      process_command();
+
+      memset(rx_buffer, 0, RX_BUFFER_SIZE);  // Clear the buffer
+      rx_index = 0;
+      command_ready = 0;
+
+      HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // Restart reception
+    }
 
 
 
@@ -177,6 +191,7 @@ void SystemClock_Config(void)
   * @param None
   * @retval None
   */
+ 
 static void MX_I2C1_Init(void)
 {
 
@@ -318,10 +333,53 @@ static void MX_GPIO_Init(void)
 /* USER CODE BEGIN 4 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
-  HAL_UART_Receive_IT(&huart2, rx_buff, 10);
-  HAL_UART_Transmit(&huart2, rx_buff, 1, 0xFFFF);
-}
+    if (huart->Instance == USART2)
+    {
+        // Echo the received character
+        HAL_UART_Transmit(&huart2, &rx_byte, 1, HAL_MAX_DELAY);
+        
+        if (rx_byte == '\r' || rx_byte == '\n')
+        {
+            // Only set command ready if we have received some data
+            if (rx_index > 0) {
+                rx_buffer[rx_index] = '\0';  // Null terminate the string
+                command_ready = 1;
+            }
+            
+            // If this is CR, prepare to ignore following LF
+            if (rx_byte == '\r') {
+                HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+            }
+        }
+        else if (rx_index < RX_BUFFER_SIZE - 1)  // Leave space for null terminator
+        {
+            // Add character to buffer
+            rx_buffer[rx_index++] = rx_byte;
+            
+            // Restart reception for next character
+            HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+        }
+        else
+        {
+            // Buffer overflow - reset buffer
+            rx_index = 0;
+            memset(rx_buffer, 0, RX_BUFFER_SIZE);
+            
+            // Restart reception
+            HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
+        }
+    }
+    }
 
+/**
+ * @brief Print a welcome message on the UART console
+ *
+ * This function sends a welcome message to the UART console. The message
+ * includes the name of the project, the copyright information and the
+ * version number.
+ *
+ * @retval None
+ */
 void Welcome_Message(){
   char msg[] ="                                                                  \r\n\
  ______  _         ______                  _                                     \r\n\
@@ -348,7 +406,43 @@ void print_menu()
                       "7. RESET - Reset I2C bus\r\n"
                       "8. HELP - Display this menu\r\n"
                       "9. EXIT - Exit the menu\r\n";
+    				  "\r\n";
+    				  "stm32> ";
     HAL_UART_Transmit(&huart2, (uint8_t *)menu_text, strlen(menu_text), HAL_MAX_DELAY);
+}
+
+void process_command(void)
+{
+    // Remove any trailing newline or carriage return
+    rx_buffer[strcspn((char*)rx_buffer, "\r\n")] = 0;
+    
+    // Convert command to uppercase for easier comparison
+    for(int i = 0; rx_buffer[i]; i++)
+    {
+        rx_buffer[i] = toupper(rx_buffer[i]);
+    }
+    
+    // Process the command
+    if (strcmp((char*)rx_buffer, "SCAN") == 0)
+    {
+        // Handle SCAN command
+        // Add your SCAN implementation here
+    }
+    else if (strcmp((char*)rx_buffer, "READ") == 0)
+    {
+        // Handle READ command
+        // Add your READ implementation here
+    }
+    // Add other command handlers here
+    else if (strcmp((char*)rx_buffer, "HELP") == 0)
+    {
+        print_menu();
+    }
+    else
+    {
+        char *error_msg = "Unknown command. Type HELP for available commands\r\n";
+        HAL_UART_Transmit(&huart2, (uint8_t*)error_msg, strlen(error_msg), HAL_MAX_DELAY);
+    }
 }
 
 /* USER CODE END 4 */

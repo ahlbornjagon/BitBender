@@ -1,0 +1,24 @@
+# Build outputs
+BitBender/Debug/
+BitBender/Release/
+BitBender/build/
+
+# IDE metadata
+.metadata/
+.settings/
+.launch/
+
+# Generated files
+*.o
+*.d
+*.obj
+*.elf
+*.hex
+*.bin
+*.list
+*.map
+*.su
+
+# Backup files
+*.bak
+*~
