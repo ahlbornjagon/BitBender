@@ -405,28 +405,27 @@ void print_menu()
                       "6. INFO - Display device information\r\n"
                       "7. RESET - Reset I2C bus\r\n"
                       "8. HELP - Display this menu\r\n"
-                      "9. EXIT - Exit the menu\r\n";
-    				  "\r\n";
-    				  "stm32> ";
+                      "9. EXIT - Exit the menu\r\n"
+                      "\r\n"
+                      "stm32> ";
     HAL_UART_Transmit(&huart2, (uint8_t *)menu_text, strlen(menu_text), HAL_MAX_DELAY);
 }
 
 void process_command(void)
 {
     // Remove any trailing newline or carriage return
-    rx_buffer[strcspn((char*)rx_buffer, "\r\n")] = 0;
-    
+   rx_buffer[strcspn((char*)rx_buffer, "\r\n")] = 0;
+
     // Convert command to uppercase for easier comparison
     for(int i = 0; rx_buffer[i]; i++)
     {
         rx_buffer[i] = toupper(rx_buffer[i]);
     }
-    
+
     // Process the command
     if (strcmp((char*)rx_buffer, "SCAN") == 0)
     {
-        // Handle SCAN command
-        // Add your SCAN implementation here
+        handleScan();
     }
     else if (strcmp((char*)rx_buffer, "READ") == 0)
     {
@@ -442,7 +441,45 @@ void process_command(void)
     {
         char *error_msg = "Unknown command. Type HELP for available commands\r\n";
         HAL_UART_Transmit(&huart2, (uint8_t*)error_msg, strlen(error_msg), HAL_MAX_DELAY);
+        rearm_uart();
     }
+}
+
+void rearm_uart(void)
+{
+  char msg[] = "stm32> ";
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+  HAL_UART_Receive_IT(&huart2, rx_byte, 1);
+}
+
+void handleScan(void)
+{
+  char initmsg[] = "Scanning for devices...\r\n";
+  char msg[128] = "";
+  HAL_UART_Transmit(&huart2, (uint8_t*)initmsg, sizeof(initmsg), HAL_MAX_DELAY);
+
+  HAL_StatusTypeDef status;
+  uint8_t devices[128];
+  uint8_t num_devices = 0;
+
+  for (int i = 1; i < 128; i++) {
+    int i2cAddress = i<<1;
+    status = HAL_I2C_IsDeviceReady(&hi2c1, i2cAddress, 1, 10);
+    if (status == HAL_OK) {
+      sprintf(msg, "\nDevice found at address 0x%X\r\n", i2cAddress);
+      HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+      num_devices++;
+    }
+  }
+ 
+  if (num_devices == 0) {
+    sprintf(msg, "\nNo devices found\r\n");
+    HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+    rearm_uart();
+  } else {
+    sprintf(msg, "\nScanning complete. Found %d devices\r\n", num_devices);
+    rearm_uart();
+  }
 }
 
 /* USER CODE END 4 */
