@@ -20,6 +20,8 @@
 #include "main.h"
 #include <string.h>
 #include <ctype.h>
+#include "uartHandler.h"
+#include "i2c.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
@@ -42,19 +44,10 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
-I2C_HandleTypeDef hi2c1;
-
 SPI_HandleTypeDef hspi2;
 
-UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-#define RX_BUFFER_SIZE 128
-
-uint8_t rx_byte;
-uint8_t rx_buffer[RX_BUFFER_SIZE];
-uint16_t rx_index = 0;
-uint8_t command_ready = 0;
 
 /* USER CODE END PV */
 
@@ -62,7 +55,6 @@ uint8_t command_ready = 0;
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_I2C1_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -107,14 +99,12 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-
+  MX_I2C1_Init();
   Welcome_Message();
   print_menu();
-
+  rearm_uart(&huart2, rx_buffer, 1);
 
   /* USER CODE END 2 */
-
-  HAL_UART_Receive_IT(&huart2, rx_buffer, 1);
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
@@ -123,16 +113,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if (command_ready)
-    {
-      process_command();
-
-      memset(rx_buffer, 0, RX_BUFFER_SIZE);  // Clear the buffer
-      rx_index = 0;
-      command_ready = 0;
-
-      HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // Restart reception
-    }
+    UART_ProcessCommands();
 
 
 
@@ -192,34 +173,7 @@ void SystemClock_Config(void)
   * @retval None
   */
  
-static void MX_I2C1_Init(void)
-{
 
-  /* USER CODE BEGIN I2C1_Init 0 */
-
-  /* USER CODE END I2C1_Init 0 */
-
-  /* USER CODE BEGIN I2C1_Init 1 */
-
-  /* USER CODE END I2C1_Init 1 */
-  hi2c1.Instance = I2C1;
-  hi2c1.Init.ClockSpeed = 100000;
-  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
-  hi2c1.Init.OwnAddress1 = 0;
-  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
-  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
-  hi2c1.Init.OwnAddress2 = 0;
-  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
-  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
-  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN I2C1_Init 2 */
-
-  /* USER CODE END I2C1_Init 2 */
-
-}
 
 /**
   * @brief SPI2 Initialization Function
@@ -264,33 +218,7 @@ static void MX_SPI2_Init(void)
   * @param None
   * @retval None
   */
-static void MX_USART2_UART_Init(void)
-{
 
-  /* USER CODE BEGIN USART2_Init 0 */
-
-  /* USER CODE END USART2_Init 0 */
-
-  /* USER CODE BEGIN USART2_Init 1 */
-
-  /* USER CODE END USART2_Init 1 */
-  huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
-  huart2.Init.WordLength = UART_WORDLENGTH_8B;
-  huart2.Init.StopBits = UART_STOPBITS_1;
-  huart2.Init.Parity = UART_PARITY_NONE;
-  huart2.Init.Mode = UART_MODE_TX_RX;
-  huart2.Init.HwFlowCtl = UART_HWCONTROL_NONE;
-  huart2.Init.OverSampling = UART_OVERSAMPLING_16;
-  if (HAL_UART_Init(&huart2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN USART2_Init 2 */
-
-  /* USER CODE END USART2_Init 2 */
-
-}
 
 
 /**
@@ -331,46 +259,6 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
-{
-    if (huart->Instance == USART2)
-    {
-        // Echo the received character
-        HAL_UART_Transmit(&huart2, &rx_byte, 1, HAL_MAX_DELAY);
-        
-        if (rx_byte == '\r' || rx_byte == '\n')
-        {
-            // Only set command ready if we have received some data
-            if (rx_index > 0) {
-                rx_buffer[rx_index] = '\0';  // Null terminate the string
-                command_ready = 1;
-            }
-            
-            // If this is CR, prepare to ignore following LF
-            if (rx_byte == '\r') {
-                HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-            }
-        }
-        else if (rx_index < RX_BUFFER_SIZE - 1)  // Leave space for null terminator
-        {
-            // Add character to buffer
-            rx_buffer[rx_index++] = rx_byte;
-            
-            // Restart reception for next character
-            HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-        }
-        else
-        {
-            // Buffer overflow - reset buffer
-            rx_index = 0;
-            memset(rx_buffer, 0, RX_BUFFER_SIZE);
-            
-            // Restart reception
-            HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
-        }
-    }
-    }
-
 /**
  * @brief Print a welcome message on the UART console
  *
@@ -394,66 +282,12 @@ void Welcome_Message(){
   HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);  
 }
 
-void print_menu()
+
+
+
+
 {
-    char *menu_text = "Available Commands:\r\n"
-                      "1. SCAN - Scan for devices\r\n"
-                      "2. READ - Read from device\r\n"
-                      "3. WRITE - Write to device\r\n"
-                      "4. SET_SPEED - Set communication speed\r\n"
-                      "5. CONFIGURE - Configure device\r\n"
-                      "6. INFO - Display device information\r\n"
-                      "7. RESET - Reset I2C bus\r\n"
-                      "8. HELP - Display this menu\r\n"
-                      "9. EXIT - Exit the menu\r\n"
-                      "\r\n"
-                      "stm32> ";
-    HAL_UART_Transmit(&huart2, (uint8_t *)menu_text, strlen(menu_text), HAL_MAX_DELAY);
-}
 
-void process_command(void)
-{
-    // Remove any trailing newline or carriage return
-   rx_buffer[strcspn((char*)rx_buffer, "\r\n")] = 0;
-
-    // Convert command to uppercase for easier comparison
-    for(int i = 0; rx_buffer[i]; i++)
-    {
-        rx_buffer[i] = toupper(rx_buffer[i]);
-    }
-
-    // Process the command
-    if (strcmp((char*)rx_buffer, "SCAN") == 0)
-    {
-        handleScan();
-    }
-    else if (strcmp((char*)rx_buffer, "READ") == 0)
-    {
-        // Handle READ command
-        // Add your READ implementation here
-    }
-    // Add other command handlers here
-    else if (strcmp((char*)rx_buffer, "HELP") == 0)
-    {
-        print_menu();
-    }
-    else
-    {
-        char *error_msg = "Unknown command. Type HELP for available commands\r\n";
-        HAL_UART_Transmit(&huart2, (uint8_t*)error_msg, strlen(error_msg), HAL_MAX_DELAY);
-        rearm_uart();
-    }
-}
-
-void rearm_uart(void)
-{
-  char msg[] = "stm32> ";
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
-  HAL_UART_Receive_IT(&huart2, rx_byte, 1);
-}
-
-void handleScan(void)
-{
   char initmsg[] = "Scanning for devices...\r\n";
   char msg[128] = "";
   HAL_UART_Transmit(&huart2, (uint8_t*)initmsg, sizeof(initmsg), HAL_MAX_DELAY);
@@ -463,23 +297,30 @@ void handleScan(void)
   uint8_t num_devices = 0;
 
   for (int i = 1; i < 128; i++) {
-    int i2cAddress = i<<1;
-    status = HAL_I2C_IsDeviceReady(&hi2c1, i2cAddress, 1, 10);
-    if (status == HAL_OK) {
-      sprintf(msg, "\nDevice found at address 0x%X\r\n", i2cAddress);
-      HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
-      num_devices++;
-    }
+  int i2cAddress = i<<1;
+  status = HAL_I2C_IsDeviceReady(&hi2c1, i2cAddress, 1, 10);
+  if (status == HAL_OK) {
+  sprintf(msg, "\nDevice found at address 0x%X\r\n", i2cAddress);
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+  num_devices++;
   }
- 
+  }
+
   if (num_devices == 0) {
-    sprintf(msg, "\nNo devices found\r\n");
-    HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
-    rearm_uart();
+  sprintf(msg, "\nNo devices found\r\n");
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+  rearm_uart();
   } else {
-    sprintf(msg, "\nScanning complete. Found %d devices\r\n", num_devices);
-    rearm_uart();
+  sprintf(msg, "\nScanning complete. Found %d devices\r\n", num_devices);
+  rearm_uart();
   }
+  }
+
+void rearm_uart(void)
+{
+  char msg[] = "stm32> ";
+  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
+  HAL_UART_Receive_IT(&huart2, rx_byte, 1);
 }
 
 /* USER CODE END 4 */
