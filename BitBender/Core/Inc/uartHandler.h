@@ -5,3 +5,5 @@
 void MX_USART2_UART_Init(void);
 void UART_ProcessCommands(void);
 void print_menu(void);
+void rearm_uart(void);
+void uart_transmit(void *msg);

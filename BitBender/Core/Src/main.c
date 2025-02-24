@@ -54,7 +54,7 @@ SPI_HandleTypeDef hspi2;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
-static void MX_USART2_UART_Init(void);
+void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 
@@ -99,10 +99,8 @@ int main(void)
   MX_I2C1_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
-  MX_I2C1_Init();
   Welcome_Message();
   print_menu();
-  rearm_uart(&huart2, rx_buffer, 1);
 
   /* USER CODE END 2 */
 
@@ -279,48 +277,8 @@ void Welcome_Message(){
 ==========================================================                       \r\n\
 ";
 
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);  
-}
-
-
-
-
-
-{
-
-  char initmsg[] = "Scanning for devices...\r\n";
-  char msg[128] = "";
-  HAL_UART_Transmit(&huart2, (uint8_t*)initmsg, sizeof(initmsg), HAL_MAX_DELAY);
-
-  HAL_StatusTypeDef status;
-  uint8_t devices[128];
-  uint8_t num_devices = 0;
-
-  for (int i = 1; i < 128; i++) {
-  int i2cAddress = i<<1;
-  status = HAL_I2C_IsDeviceReady(&hi2c1, i2cAddress, 1, 10);
-  if (status == HAL_OK) {
-  sprintf(msg, "\nDevice found at address 0x%X\r\n", i2cAddress);
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
-  num_devices++;
-  }
-  }
-
-  if (num_devices == 0) {
-  sprintf(msg, "\nNo devices found\r\n");
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
-  rearm_uart();
-  } else {
-  sprintf(msg, "\nScanning complete. Found %d devices\r\n", num_devices);
-  rearm_uart();
-  }
-  }
-
-void rearm_uart(void)
-{
-  char msg[] = "stm32> ";
-  HAL_UART_Transmit(&huart2, (uint8_t*)msg, sizeof(msg), HAL_MAX_DELAY);
-  HAL_UART_Receive_IT(&huart2, rx_byte, 1);
+  char *msgPointer = msg;
+  uart_transmit(msgPointer);  
 }
 
 /* USER CODE END 4 */

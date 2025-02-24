@@ -33,6 +33,13 @@ void MX_I2C1_Init(void)
 
 }
 
+uint8_t enterI2Caddress(UART_HandleTypeDef *huart2){
+
+  char requestAddress[] = "Enter I2C address: ";
+  HAL_UART_Transmit(huart2, (uint8_t *)requestAddress, strlen(requestAddress), HAL_MAX_DELAY);
+  rearm_uart();
+}
+
 
 HAL_StatusTypeDef I2Cscan(I2C_DeviceList *devices)
 {
@@ -43,19 +50,15 @@ HAL_StatusTypeDef I2Cscan(I2C_DeviceList *devices)
     devices->count = 0;
 
     for (int i = 1; i < 128; i++) {
-        HAL_StatusTypeDef status = HAL_I2C_IsDeviceReady(&hi2c1, i2cAddress, 1, 10);
+        HAL_StatusTypeDef status = HAL_I2C_IsDeviceReady(&hi2c1, i, 1, 10);
         if (status == HAL_OK) {
-            devices->address[devices->count] = i2cAddress;
+            devices->address[devices->count] = i;
             devices->count++;
         }
     }
 
     return HAL_OK;
 
-}
-
-HAL_StatusTypeDef HAL_I2C_IsDeviceReady(I2C_HandleTypeDef *hi2c, uint16_t DevAddress, uint32_t Trials, uint32_t Timeout) {
-  return HAL_I2CEx_IsDeviceReady(hi2c, DevAddress, 2, );
 }
 
 HAL_StatusTypeDef I2C_ReadMemory(I2C_HandleTypeDef *hi2c, uint16_t DevAddress, uint16_t MemAddress, uint16_t MemAddSize, uint8_t *pData, uint16_t Size) {
