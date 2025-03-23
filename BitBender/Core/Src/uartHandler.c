@@ -14,9 +14,9 @@
 uint8_t rx_byte;
 uint8_t rx_buffer[RX_BUFFER_SIZE];
 uint16_t rx_index = 0;
-uint8_t command_ready = 0;
-
+control_flags_t control_flags;
 UART_HandleTypeDef huart2;
+command_parmas_t command_params;
 
 void uart_transmit(void *msg)
 {
@@ -27,14 +27,28 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2)
 	    {
-	        // Echo the received character
+            /*TODO: Going to need a better way to handle input based on if we want a command, address, or data for 
+            various commands*/
+	        
+            // Echo the received character
 	        if (rx_byte == '\r' || rx_byte == '\n')
 	        {
-	            // Only set command ready if we have received some data
-	            if (rx_index > 0) {
+	            // Set command ready flag
+	            if ((rx_index > 0) && !control_flags.commandReady) {
 	                rx_buffer[rx_index] = '\0';  // Null terminate the string
-	                command_ready = 1;
+	                control_flags.commandReady = 1;
 	            }
+
+                // Check if we are setting address
+                if ((rx_index > 0) && control_flags.setAddress) {
+                    command_params.address = rx_buffer[0];
+                    control_flags.setAddress = 0;
+                }
+                
+                // Check if we are setting data
+                if ((rx_index > 0) && control_flags.setData) {
+                    command_params.data = rx_buffer[0];
+                }
 
 	            // If this is CR, prepare to ignore following LF
 	            if (rx_byte == '\r') {
@@ -63,7 +77,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void rearm_uart(void)
 {
-  char msg[] = "stm32> ";
+  char msg[] = "BitBender> ";
   HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
 }
@@ -88,16 +102,19 @@ void MX_USART2_UART_Init(void)
 }
 
 void UART_ProcessCommands(void){
-    if (command_ready){
+    if (control_flags.commandReady) {
     
       command_dispatch();
-
-      memset(rx_buffer, 0, RX_BUFFER_SIZE);  // Clear the buffer
-      rx_index = 0;
-      command_ready = 0;
+      clear_uart_buffer();
+      control_flags.commandReady = 0;
 
       HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // Restart reception
     }
+}
+
+void clear_uart_buffer(void) {
+    memset(rx_buffer, 0, RX_BUFFER_SIZE);  // Clear the buffer
+    rx_index = 0;
 }
 
 void print_menu(void)
@@ -134,6 +151,11 @@ void command_dispatch(void)
     int cmd = rx_buffer[0] - '0';
 
    switch (cmd) {
+
+    /*
+    This case statement is for the I2C scan command. Passes in a struct for devices found on the i2c bus to
+    be stored inside of.
+    */
    case CMD_I2C_SCAN:
     char message[] = "Performing I2C scan...\r\n";
     HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
@@ -153,9 +175,25 @@ void command_dispatch(void)
             rearm_uart();
         }
         break;
-//    case CMD_I2C_READ:
-//        // Handle READ command
-//         break;
+
+    /*
+    This case statement is for the I2C read command. It first sets a read address flag for the uart interrupt 
+    so the user entered data is stored as the device address. It clears the buffer, then does the same for the 
+    data to be read.
+    */
+   case CMD_I2C_READ:
+    control_flags.setAddress = 1;
+    clear_uart_buffer();
+    enterI2Caddress(&huart2);
+    clear_uart_buffer();
+    control_flags.setData = 1;
+    enterI2Cdata(&huart2);
+    char message[] = "Performing I2C read...\r\n";
+    HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+
+    
+       // Handle READ command
+        break;
 //    case CMD_I2C_MEM_READ:
 //        // Handle WRITE command
 //        break;
@@ -175,7 +213,6 @@ void command_dispatch(void)
 //        break;
    case 9:
        print_menu();
-       rearm_uart();
        break;
     default:
         char invalid_message[] = "Invalid command\r\n";

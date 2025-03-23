@@ -40,6 +40,12 @@ uint8_t enterI2Caddress(UART_HandleTypeDef *huart2){
   rearm_uart();
 }
 
+uint8_t enterI2Cdata(UART_HandleTypeDef *huart2){
+
+  char requestData[] = "Enter data: ";
+  HAL_UART_Transmit(huart2, (uint8_t *)requestData, strlen(requestData), HAL_MAX_DELAY);
+  rearm_uart();
+}
 
 HAL_StatusTypeDef I2Cscan(I2C_DeviceList *devices)
 {
@@ -69,4 +75,19 @@ HAL_StatusTypeDef I2C_ReadData(I2C_HandleTypeDef *hi2c, uint16_t DevAddress, uin
     return HAL_I2C_Mem_Read(hi2c, DevAddress, MemAddress, MemAddSize, pData, Size, 1000);
 
 }
+
+// Working on master read command. Need to read and return data to be displayed, or just display it here
+uint8_t I2C_Master_RX(void) {
+  
+  uint8_t deviceAddress = 0x42; // Your device address here (7-bit format)
+  uint8_t buffer[10];           // Buffer to store received data
+  HAL_StatusTypeDef status;     // To check the operation result
+
+  status = HAL_I2C_Master_Receive(&hi2c1,     // I2C handle
+    (deviceAddress << 1),  // Device address (shifted left by 1 bit)
+    buffer,      // Receive buffer
+    sizeof(buffer), // Number of bytes to receive
+    HAL_MAX_DELAY); // Timeout
+}
+
 
