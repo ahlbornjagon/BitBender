@@ -1,6 +1,5 @@
-# BitBender - Your Interactive Embedded Systems Controller
+![](BitBender/images/bitbender.jpg)
 
-![](images/bitbender.jpg)
 
 ## What is it?
 BitBender is a program written for the STM32 (soon to be followed by targets) that allows for interactive control of devices on various protocols. 
