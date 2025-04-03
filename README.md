@@ -5,17 +5,16 @@ BitBender is a program written for the STM32 (soon to be followed by targets) th
 
 ## Current I2C commands supported:
  
-| Command #     |     Function            |
-| ------------- | ----------------------- |
-|       1       | Scan for devices        |
-|       2       | Read from device        |
-|       3       | Read from device memory |
-|       4       | Write to device         |
-|       5       | Write to device memory  |
-|       6       | Set communication speed |
-|       7       | Display controller info |
-|       8       | Reset I2C Bus           |
-|       9       | Display command menu    |
+| Command             |     Function            |
+| --------------------| ----------------------- |
+|       scan          | Scan for devices        |
+|       read          | Read from device        |
+|       readmem       | Read from device memory |
+|       write         | Write to device         |
+|       writemem      | Write to device memory  |
+|       speed         | Set communication speed |
+|       help          | Reset I2C Bus           |
+|       reset         | Display command menu    |
 
 ## Current SPI commands supported:
 

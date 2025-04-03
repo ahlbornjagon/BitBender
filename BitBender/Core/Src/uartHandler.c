@@ -5,18 +5,19 @@
 #include <main.h>
 #include "i2c.h"
 #include <string.h> 
+#include <stdbool.h>
 
 
 
 #define CMD_BUFFER_SIZE 32
 #define RX_BUFFER_SIZE 128
+#define MAX_READ_LENGTH 32
 
 uint8_t rx_byte;
 uint8_t rx_buffer[RX_BUFFER_SIZE];
 uint16_t rx_index = 0;
-control_flags_t control_flags;
+
 UART_HandleTypeDef huart2;
-command_parmas_t command_params;
 
 void uart_transmit(void *msg)
 {
@@ -27,28 +28,14 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
 	if (huart->Instance == USART2)
 	    {
-            /*TODO: Going to need a better way to handle input based on if we want a command, address, or data for 
-            various commands*/
-	        
-            // Echo the received character
+	        // Echo the received character
 	        if (rx_byte == '\r' || rx_byte == '\n')
 	        {
-	            // Set command ready flag
-	            if ((rx_index > 0) && !control_flags.commandReady) {
+	            // Only set command ready if we have received some data
+	            if (rx_index > 0) {
 	                rx_buffer[rx_index] = '\0';  // Null terminate the string
-	                control_flags.commandReady = 1;
+	                command_ready = 1;
 	            }
-
-                // Check if we are setting address
-                if ((rx_index > 0) && control_flags.setAddress) {
-                    command_params.address = rx_buffer[0];
-                    control_flags.setAddress = 0;
-                }
-                
-                // Check if we are setting data
-                if ((rx_index > 0) && control_flags.setData) {
-                    command_params.data = rx_buffer[0];
-                }
 
 	            // If this is CR, prepare to ignore following LF
 	            if (rx_byte == '\r') {
@@ -77,7 +64,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void rearm_uart(void)
 {
-  char msg[] = "BitBender> ";
+  char msg[] = "bitbender> ";
   HAL_UART_Transmit(&huart2, (uint8_t*)msg, strlen(msg), HAL_MAX_DELAY);
   HAL_UART_Receive_IT(&huart2, &rx_byte, 1);
 }
@@ -102,33 +89,30 @@ void MX_USART2_UART_Init(void)
 }
 
 void UART_ProcessCommands(void){
-    if (control_flags.commandReady) {
+    if (command_ready){
     
       command_dispatch();
-      clear_uart_buffer();
-      control_flags.commandReady = 0;
+
+      memset(rx_buffer, 0, RX_BUFFER_SIZE);  // Clear the buffer
+      rx_index = 0;
+      command_ready = 0;
 
       HAL_UART_Receive_IT(&huart2, &rx_byte, 1);  // Restart reception
     }
 }
 
-void clear_uart_buffer(void) {
-    memset(rx_buffer, 0, RX_BUFFER_SIZE);  // Clear the buffer
-    rx_index = 0;
-}
-
 void print_menu(void)
 {
     char *menu_text = "Available Commands:\r\n"
-                      "1. SCAN - Scan for devices\r\n"
-                      "2. READ - Read from device\r\n"
-                      "3. MEM_READ - Read from device memory\r\n"
-                      "4. WRITE - Write to device\r\n"
-                      "5. MEM_WRITE- Write to device memory\r\n"
-                      "6. SET_SPEED - Set communication speed\r\n"
-                      "7. INFO - Display device information\r\n"
-                      "8. RESET - Reset I2C bus\r\n"
-                      "9. HELP - Display this menu\r\n"
+                      "1. scan - Scan for devices\r\n"
+                      "2. read - Read from device\r\n"
+                      "3. readmem - Read from device memory\r\n"
+                      "4. write - Write to device\r\n"
+                      "5. writemem - Write to device memory\r\n"
+                      "6. speed - Set communication speed\r\n"
+                      "7. info - Display device information\r\n"
+                      "8. reset - Reset I2C bus\r\n"
+                      "9. help - Display this menu\r\n"
                       "\r\n";
     HAL_UART_Transmit(&huart2, (uint8_t *)menu_text, strlen(menu_text), HAL_MAX_DELAY);
     rearm_uart();
@@ -145,78 +129,321 @@ void print_menu(void)
  * @param[in]  None
  *
  * @return     None
+ * 
  */
+
+ commands_t ParseCommand(const char* cmd_str) {
+    if (strcmp(cmd_str, "scan") == 0) {
+        return CMD_I2C_SCAN;
+    } else if (strcmp(cmd_str, "write") == 0) {
+        return CMD_I2C_WRITE;
+    } else if (strcmp(cmd_str, "read") == 0) {
+        return CMD_I2C_READ;
+    } else if (strcmp(cmd_str, "memread") == 0) {
+        return CMD_I2C_MEM_READ;
+    } else {
+        return 0; // Invalid command
+    }
+}
 void command_dispatch(void)
 {
-    int cmd = rx_buffer[0] - '0';
+    // Pulls the first word of the command
+    char* cmd_str = strtok(rx_buffer, " \t\r\n");
+    if (cmd_str == NULL) {
+        printf("Error: Empty command\r\n");
+        return;
+    }
+    char message[100];
 
+    // Validate the command against command list
+   commands_t cmd = ParseCommand(cmd_str);
    switch (cmd) {
 
-    /*
-    This case statement is for the I2C scan command. Passes in a struct for devices found on the i2c bus to
-    be stored inside of.
-    */
+    // Scan for devices
    case CMD_I2C_SCAN:
-    char message[] = "Performing I2C scan...\r\n";
-    HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+   {
+        strcpy(message, "Performing I2C scan...\r\n");
+        HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
         I2C_DeviceList devices;
         // This function performs the scan and stores list of devices in devices struct 
         if (I2Cscan(&devices) == HAL_OK) {
-        	if (devices.count)
-				for (int i = 0; i < devices.count; i++) {
-					char formattedMessage[64];
-					sprintf(formattedMessage, "Device %d: 0x%02X\r\n", i, devices.address[i]);
-					HAL_UART_Transmit(&huart2, (uint8_t*)formattedMessage, strlen(formattedMessage), HAL_MAX_DELAY);
-				}
-        	else{
-        		char message[] = "No devices found\r\n";
-        		HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            if (devices.count)
+                for (int i = 0; i < devices.count; i++) {
+                    char formattedMessage[64];
+                    sprintf(formattedMessage, "Device %d: 0x%02X\r\n", i, devices.address[i]);
+                    HAL_UART_Transmit(&huart2, (uint8_t*)formattedMessage, strlen(formattedMessage), HAL_MAX_DELAY);
+                }
+            else{
+                strcpy(message, "No devices found\r\n");
+                HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
             }
             rearm_uart();
         }
         break;
+    }
 
-    /*
-    This case statement is for the I2C read command. It first sets a read address flag for the uart interrupt 
-    so the user entered data is stored as the device address. It clears the buffer, then does the same for the 
-    data to be read.
-    */
+    // Read from a device
    case CMD_I2C_READ:
-    control_flags.setAddress = 1;
-    clear_uart_buffer();
-    enterI2Caddress(&huart2);
-    clear_uart_buffer();
-    control_flags.setData = 1;
-    enterI2Cdata(&huart2);
-    char message[] = "Performing I2C read...\r\n";
-    HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
-
-    
-       // Handle READ command
+   {
+        char* addr_str = strtok(NULL, " \t\r\n");
+        if (addr_str == NULL) {
+            strcpy(message, "Device address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        char* size = strtok(NULL, " \t\r\n");
+        if (size == NULL) {
+            strcpy(message, "Bytes to read is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t len = (uint8_t)strtol(size, NULL, 0);
+        if (len > MAX_READ_LENGTH) {
+            snprintf(message, sizeof(message), "Warning: Read length limited to %d bytes\r\n", MAX_READ_LENGTH);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            len = MAX_READ_LENGTH;
+        }
+        uint8_t data_buffer[MAX_READ_LENGTH];
+        HAL_StatusTypeDef status = I2C_ReadData(addr_str, data_buffer, len);
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "Read from device 0x%02X", addr_str);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            
+            // Print data in rows of 8 bytes
+            for (int i = 0; i < len; i++) {
+                // Format each byte
+                snprintf(message, sizeof(message), "0x%02X ", data_buffer[i]);
+                HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+                
+                // Add a newline after every 8 bytes
+                if ((i + 1) % 8 == 0) {
+                    HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+                }
+            }
+            
+            // Add final newline if not already added
+            if (len % 8 != 0) {
+                HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+            }
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Error: I2C read failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        }
         break;
-//    case CMD_I2C_MEM_READ:
-//        // Handle WRITE command
-//        break;
-//    case CMD_I2C_WRITE:
-//        // Handle SET_SPEED command
-//        break;
-//    case CMD_I2C_MEM_WRITE:
-//        // Handle CONFIGURE command
-//        break;
-//    case 6:
-//        // Handle INFO command
-//        break;
-//    case 7:
-//     break;
-//    case 8:
-//        // Handle RESET command
-//        break;
-   case 9:
-       print_menu();
+    }
+    // Read from a specific register inside a device
+    case CMD_I2C_MEM_READ:
+    {
+        char* addr_str = strtok(NULL, " \t\r\n");
+        if (addr_str == NULL) {
+            strcpy(message, "Device address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t dev_addr = (uint8_t)strtol(addr_str, NULL, 0);
+        
+        // Parse the register/memory address
+        char* reg_str = strtok(NULL, " \t\r\n");
+        if (reg_str == NULL) {
+            strcpy(message, "Memory address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t reg_addr = (uint8_t)strtol(reg_str, NULL, 0);
+        
+        // Parse the number of bytes to read
+        char* len_str = strtok(NULL, " \t\r\n");
+        if (len_str == NULL) {
+            strcpy(message, "Bytes to read is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t len = (uint8_t)strtol(len_str, NULL, 0);
+        
+        if (len > MAX_READ_LENGTH) {
+            snprintf(message, sizeof(message), "Warning: Read length limited to %d bytes\r\n", MAX_READ_LENGTH);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            len = MAX_READ_LENGTH;
+        }
+        
+        uint8_t data_buffer[MAX_READ_LENGTH];
+        HAL_StatusTypeDef status = I2C_ReadMemory(dev_addr, reg_addr, I2C_MEMADD_SIZE_8BIT, data_buffer, len);
+        
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "Read from device 0x%02X, memory 0x%02X:\r\n", dev_addr, reg_addr);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            
+            // Print data in rows of 8 bytes
+            for (int i = 0; i < len; i++) {
+                // Format each byte
+                snprintf(message, sizeof(message), "0x%02X ", data_buffer[i]);
+                HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+                
+                // Add a newline after every 8 bytes
+                if ((i + 1) % 8 == 0) {
+                    HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+                }
+            }
+            
+            // Add final newline if not already added
+            if (len % 8 != 0) {
+                HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+            }
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Error: I2C memory read failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        }
+        break;
+    }
+    // Write to a device
+    case CMD_I2C_WRITE:{
+        char* addr_str = strtok(NULL, " \t\r\n");
+        if (addr_str == NULL) {
+            strcpy(message, "Device address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t dev_addr = (uint8_t)strtol(addr_str, NULL, 0);
+        
+        // Parse the register address
+        char* reg_str = strtok(NULL, " \t\r\n");
+        if (reg_str == NULL) {
+            strcpy(message, "Register address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t reg_addr = (uint8_t)strtol(reg_str, NULL, 0);
+        
+        // Parse the data to write
+        char* data_str = strtok(NULL, " \t\r\n");
+        if (data_str == NULL) {
+            strcpy(message, "Data to write is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t data_byte = (uint8_t)strtol(data_str, NULL, 0);
+        
+        // Perform the I2C write operation
+        HAL_StatusTypeDef status = I2C_WriteData(dev_addr, &data_byte, 1);
+        
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "Write 0x%02X to device 0x%02X, register 0x%02X: OK\r\n", 
+                     data_byte, dev_addr, reg_addr);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+        } else {
+            snprintf(message, sizeof(message), "Error: I2C write failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+        }
+        rearm_uart();
+        break;
+    }
+    // Write to a specific memory address of a device
+    case CMD_I2C_MEM_WRITE:
+    {
+        char* addr_str = strtok(NULL, " \t\r\n");
+        if (addr_str == NULL) {
+            strcpy(message, "Device address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t dev_addr = (uint8_t)strtol(addr_str, NULL, 0);
+        
+        // Parse the memory address
+        char* mem_str = strtok(NULL, " \t\r\n");
+        if (mem_str == NULL) {
+            strcpy(message, "Memory address is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint16_t mem_addr = (uint16_t)strtol(mem_str, NULL, 0);
+        
+        // Parse the data to write
+        char* data_str = strtok(NULL, " \t\r\n");
+        if (data_str == NULL) {
+            strcpy(message, "Data to write is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        uint8_t data_byte = (uint8_t)strtol(data_str, NULL, 0);
+        
+        // Determine memory address size (8-bit or 16-bit)
+        uint8_t mem_addr_size = (mem_addr > 0xFF) ? I2C_MEMADD_SIZE_16BIT : I2C_MEMADD_SIZE_8BIT;
+        
+        // Perform the I2C memory write operation
+        HAL_StatusTypeDef status = I2C_WriteMemory(dev_addr, mem_addr, mem_addr_size, &data_byte, 1);
+        
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "Memory write 0x%02X to device 0x%02X, address 0x%04X: OK\r\n", 
+                     data_byte, dev_addr, mem_addr);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+        } else {
+            snprintf(message, sizeof(message), "Error: I2C memory write failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+        }
+        rearm_uart();
+        break;
+    }
+
+    // Set I2C speed
+    case CMD_I2C_SPEED:
+    {
+       char* speed_str = strtok(NULL, " \t\r\n");
+       uint8_t speed = (uint8_t)strtol(speed_str, NULL, 0);
+       bool isvalid = setI2Cspeed(speed);
+       if (isvalid) {
+            snprintf(message, sizeof(message), "I2C speed set to %d kHz\r\n", speed);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Invalid I2C speed. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        }
        break;
+    }
+
+    // Reset I2C bus
+    case CMD_I2C_RESET:
+    {
+        HAL_StatusTypeDef status = I2C_RESET();
+
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "I2C bus reset: OK\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Error: I2C bus reset failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        break;
+        }
+    }
+
+    // Display help menu
+    case CMD_HELP:
+        print_menu();
+        break;
+    
+    // Invalid command
     default:
-        char invalid_message[] = "Invalid command\r\n";
-        HAL_UART_Transmit(&huart2, (uint8_t*)invalid_message, strlen(invalid_message), HAL_MAX_DELAY);
+        strcpy(message, "Invalid command\r\n");
+        HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
         rearm_uart();
     }
 }
