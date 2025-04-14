@@ -1,8 +1,5 @@
 #include "i2c.h"
 #include "main.h"
-#include <stdbool.h>
-
-
 
 I2C_HandleTypeDef hi2c1;
 
@@ -81,6 +78,7 @@ HAL_StatusTypeDef I2C_ReadMemory(uint16_t DevAddress, uint16_t MemAddress, uint1
 HAL_StatusTypeDef I2C_WriteMemory(uint16_t DevAddress, uint16_t MemAddress, uint16_t MemAddSize, uint8_t *pData, uint16_t Size) {
   return HAL_I2C_Mem_Write(&hi2c1, DevAddress, MemAddress, MemAddSize, pData, Size, 1000);
 }
+
 
 
 HAL_StatusTypeDef I2C_ReadData(uint16_t DevAddress, uint8_t *pData, uint16_t Size) {

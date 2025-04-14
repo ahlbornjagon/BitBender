@@ -6,16 +6,19 @@
 #include "i2c.h"
 #include <string.h> 
 #include <stdbool.h>
+#include "gpio.h"
 
 
 
 #define CMD_BUFFER_SIZE 32
 #define RX_BUFFER_SIZE 128
 #define MAX_READ_LENGTH 32
+#define MAX_WRITE_LENGTH 32
 
 uint8_t rx_byte;
 uint8_t rx_buffer[RX_BUFFER_SIZE];
 uint16_t rx_index = 0;
+bool command_ready = 0;
 
 UART_HandleTypeDef huart2;
 
@@ -104,12 +107,12 @@ void UART_ProcessCommands(void){
 void print_menu(void)
 {
     char *menu_text = "Available Commands:\r\n"
-                      "1. scan - Scan for devices\r\n"
-                      "2. read - Read from device\r\n"
-                      "3. readmem - Read from device memory\r\n"
-                      "4. write - Write to device\r\n"
-                      "5. writemem - Write to device memory\r\n"
-                      "6. speed - Set communication speed\r\n"
+                      "1. i2cscan - Scan for devices\r\n"
+                      "2. i2cread - Read from device\r\n"
+                      "3. i2creadmem - Read from device memory\r\n"
+                      "4. i2cwrite - Write to device\r\n"
+                      "5. i2cwritemem - Write to device memory\r\n"
+                      "6. i2cspeed - Set communication speed\r\n"
                       "7. info - Display device information\r\n"
                       "8. reset - Reset I2C bus\r\n"
                       "9. help - Display this menu\r\n"
@@ -133,15 +136,24 @@ void print_menu(void)
  */
 
  commands_t ParseCommand(const char* cmd_str) {
-    if (strcmp(cmd_str, "scan") == 0) {
+    if (strcmp(cmd_str, "i2cscan") == 0) {
         return CMD_I2C_SCAN;
-    } else if (strcmp(cmd_str, "write") == 0) {
+    } else if (strcmp(cmd_str, "i2cwrite") == 0) {
         return CMD_I2C_WRITE;
-    } else if (strcmp(cmd_str, "read") == 0) {
+    } else if (strcmp(cmd_str, "i2cread") == 0) {
         return CMD_I2C_READ;
-    } else if (strcmp(cmd_str, "memread") == 0) {
+    } else if (strcmp(cmd_str, "i2cmemread") == 0) {
         return CMD_I2C_MEM_READ;
-    } else {
+    } else if (strcmp(cmd_str, "i2cmemwrite") == 0) {
+        return CMD_I2C_MEM_WRITE;
+    } else if (strcmp(cmd_str, "i2cspeed") == 0) {
+        return CMD_I2C_SPEED;
+    } else if (strcmp(cmd_str, "i2reset") == 0) {
+        return CMD_I2C_RESET;
+    } else if (strcmp(cmd_str, "help") == 0) {
+        return CMD_HELP;
+    }
+    else {
         return 0; // Invalid command
     }
 }
@@ -435,10 +447,184 @@ void command_dispatch(void)
         }
     }
 
+
+    case CMD_SPI_WRITE:
+    {
+        char* cs_pin_str = strtok(NULL, " \t\r\n");
+        if (cs_pin_str == NULL) {
+            strcpy(message, "CS pin is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        
+        uint8_t tx_buffer[MAX_WRITE_LENGTH];
+        uint8_t data_len = 0;
+        char* data_str;
+        
+        while ((data_str = strtok(NULL, " \t\r\n")) != NULL && data_len < MAX_WRITE_LENGTH) {
+            tx_buffer[data_len++] = (uint8_t)strtol(data_str, NULL, 0);
+        }
+        
+        if (data_len == 0) {
+            strcpy(message, "No data to write. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        
+        uint8_t cs_pin = (uint8_t)strtol(cs_pin_str, NULL, 0);
+        
+        GPIO_WritePin(cs_pin, GPIO_PIN_RESET);
+        
+        HAL_StatusTypeDef status = SPI_Transmit(tx_buffer, data_len);
+        
+        GPIO_WritePin(cs_pin, GPIO_PIN_SET);
+        
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "Successfully wrote %d bytes to SPI with CS pin %d\r\n", 
+                     data_len, cs_pin);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Error: SPI write failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        }
+        break;
+    }
+
+    case CMD_SPI_READ:
+    {
+        char* cs_pin_str = strtok(NULL, " \t\r\n");
+        if (cs_pin_str == NULL) {
+            strcpy(message, "CS pin is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        
+        char* size_str = strtok(NULL, " \t\r\n");
+        if (size_str == NULL) {
+            strcpy(message, "Bytes to read is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        
+        uint8_t size = (uint8_t)strtol(size_str, NULL, 0);
+        if (size > MAX_READ_LENGTH) {
+            snprintf(message, sizeof(message), "Warning: Read length limited to %d bytes\r\n", MAX_READ_LENGTH);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            size = MAX_READ_LENGTH;
+            rearm_uart();
+        }
+        
+        uint8_t cs_pin = (uint8_t)strtol(cs_pin_str, NULL, 0);
+        uint8_t rx_buffer[MAX_READ_LENGTH];
+        
+        
+        GPIO_WritePin(cs_pin, GPIO_PIN_RESET);
+        
+        HAL_StatusTypeDef status = SPI_Receive(rx_buffer, size);
+        
+        GPIO_WritePin(cs_pin, GPIO_PIN_SET);
+        
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "Read %d bytes from SPI with CS pin %d:\r\n", size, cs_pin);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            
+            // Print data in rows of 8 bytes
+            for (int i = 0; i < size; i++) {
+                snprintf(message, sizeof(message), "0x%02X ", rx_buffer[i]);
+                HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+                
+                // Add a newline after every 8 bytes
+                if ((i + 1) % 8 == 0) {
+                    HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+                }
+            }
+            
+            // Add final newline if not already added
+            if (size % 8 != 0) {
+                HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+            }
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Error: SPI read failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        }
+        break;
+    }
+    
+    case CMD_SPI_TRANSFER:
+    {
+        char* cs_pin_str = strtok(NULL, " \t\r\n");
+        if (cs_pin_str == NULL) {
+            strcpy(message, "CS pin is empty. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        
+        uint8_t tx_buffer[MAX_WRITE_LENGTH];
+        uint8_t rx_buffer[MAX_READ_LENGTH];
+        uint8_t data_len = 0;
+        char* data_str;
+        
+        while ((data_str = strtok(NULL, " \t\r\n")) != NULL && data_len < MAX_READ_LENGTH) {
+            tx_buffer[data_len++] = (uint8_t)strtol(data_str, NULL, 0);
+        }
+        
+        if (data_len == 0) {
+            strcpy(message, "No data to transfer. Please try again.\r\n");
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+            return;
+        }
+        
+        uint8_t cs_pin = (uint8_t)strtol(cs_pin_str, NULL, 0);
+        
+        GPIO_WritePin(cs_pin, GPIO_PIN_RESET);
+        
+        HAL_StatusTypeDef status = SPI_TransmitReceive(tx_buffer, rx_buffer, data_len, 1000);
+        
+        GPIO_WritePin(cs_pin, GPIO_PIN_SET);
+        
+        if (status == HAL_OK) {
+            snprintf(message, sizeof(message), "SPI transfer with CS pin %d:\r\n", cs_pin);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            
+            HAL_UART_Transmit(&huart2, (uint8_t*)"Sent: ", 6, HAL_MAX_DELAY);
+            for (int i = 0; i < data_len; i++) {
+                snprintf(message, sizeof(message), "0x%02X ", tx_buffer[i]);
+                HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            }
+            HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+            
+            HAL_UART_Transmit(&huart2, (uint8_t*)"Received: ", 10, HAL_MAX_DELAY);
+            for (int i = 0; i < data_len; i++) {
+                snprintf(message, sizeof(message), "0x%02X ", rx_buffer[i]);
+                HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            }
+            HAL_UART_Transmit(&huart2, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
+            
+            rearm_uart();
+        } else {
+            snprintf(message, sizeof(message), "Error: SPI transfer failed with status %d\r\n", status);
+            HAL_UART_Transmit(&huart2, (uint8_t*)message, strlen(message), HAL_MAX_DELAY);
+            rearm_uart();
+        }
+        break;
+    }
+
     // Display help menu
     case CMD_HELP:
         print_menu();
         break;
+
+    
     
     // Invalid command
     default:

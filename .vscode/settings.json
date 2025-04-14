@@ -1,0 +1,10 @@
+{
+    "files.associations": {
+        "main.h": "c",
+        "uarthandler.h": "c",
+        "i2c.h": "c",
+        "stdbool.h": "c",
+        "stm32f4xx_hal.h": "c",
+        "stdint.h": "c"
+    }
+}
