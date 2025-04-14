@@ -150,6 +150,12 @@ void print_menu(void)
         return CMD_I2C_SPEED;
     } else if (strcmp(cmd_str, "i2reset") == 0) {
         return CMD_I2C_RESET;
+    } else if (strcmp(cmd_str, "spiread") == 0) {
+        return CMD_SPI_READ;
+    } else if (strcmp(cmd_str, "spiwrite") == 0) {
+        return CMD_SPI_WRITE;
+    } else if (strcmp(cmd_str, "spitransfer") == 0) {
+        return CMD_SPI_TRANSFER;
     } else if (strcmp(cmd_str, "help") == 0) {
         return CMD_HELP;
     }
